@@ -1,0 +1,290 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Patient Health Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f8f9fa;
+    }
+    .dashboard-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .gauge-container {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .gauge {
+      width: 100%;
+      max-width: 250px;
+      margin: 0 auto;
+    }
+    .alert {
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    .chart-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      margin-top: 20px;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .fade-in {
+      animation: fadeIn 1s ease-in;
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard-container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="text-primary fade-in">Patient Health Dashboard</h1>
+      <div>
+        <span class="text-secondary me-3">Welcome, {{ user_name }}</span>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Logout</a>
+      </div>
+    </div>
+    
+    <div id="statusAlert" class="alert d-none fade-in" role="alert">
+      <span id="statusText"></span>
+      <small id="timestamp" class="ms-2"></small>
+    </div>
+
+    <div id="errorAlert" class="alert alert-danger d-none fade-in" role="alert">
+      <span id="errorMessage">Failed to fetch data. Please try again later.</span>
+    </div>
+
+    <div class="row g-4">
+      <div class="col-md-4 gauge-container">
+        <h5 class="text-secondary text-center">Heart Rate (BPM)</h5>
+        <canvas id="pulseGauge" class="gauge"></canvas>
+        <p id="pulseValue" class="text-primary text-center mt-2">-</p>
+      </div>
+      <div class="col-md-4 gauge-container">
+        <h5 class="text-secondary text-center">Temperature (°C)</h5>
+        <canvas id="tempGauge" class="gauge"></canvas>
+        <p id="tempValue" class="text-primary text-center mt-2">-</p>
+      </div>
+      <div class="col-md-4 gauge-container">
+        <h5 class="text-secondary text-center">Humidity (%)</h5>
+        <canvas id="humidityGauge" class="gauge"></canvas>
+        <p id="humidityValue" class="text-primary text-center mt-2">-</p>
+      </div>
+    </div>
+
+    <div class="chart-container fade-in">
+      <h5 class="text-secondary mb-3">Vitals History</h5>
+      <canvas id="vitalsChart"></canvas>
+      <button class="btn btn-primary mt-3" onclick="exportCSV(historyData)">Export Vitals Report</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gaugeJS@1.3.7/dist/gauge.min.js"></script>
+  <script>
+    const statusAlert = document.getElementById('statusAlert');
+    const statusText = document.getElementById('statusText');
+    const timestamp = document.getElementById('timestamp');
+    const errorAlert = document.getElementById('errorAlert');
+    const errorMessage = document.getElementById('errorMessage');
+
+    // Initialize gauges
+    const pulseGauge = new Gauge(document.getElementById('pulseGauge')).setOptions({
+      angle: 0, lineWidth: 0.44, radiusScale: 1, pointer: { length: 0.6, strokeWidth: 0.035 },
+      limitMax: true, limitMin: true, colorStart: '#6FADCF', colorStop: '#8FC0DA',
+      strokeColor: '#E0E0E0', generateGradient: true, highDpiSupport: true,
+      staticZones: [
+        { strokeStyle: "#30B32D", min: 50, max: 100 },
+        { strokeStyle: "#FFDD00", min: 100, max: 120 },
+        { strokeStyle: "#F03E3E", min: 120, max: 150 }
+      ]
+    });
+    pulseGauge.maxValue = 150; pulseGauge.setMinValue(50);
+    pulseGauge.set(50);
+
+    const tempGauge = new Gauge(document.getElementById('tempGauge')).setOptions({
+      angle: 0, lineWidth: 0.44, radiusScale: 1, pointer: { length: 0.6, strokeWidth: 0.035 },
+      limitMax: true, limitMin: true, colorStart: '#6FADCF', colorStop: '#8FC0DA',
+      strokeColor: '#E0E0E0', generateGradient: true, highDpiSupport: true,
+      staticZones: [
+        { strokeStyle: "#30B32D", min: 35, max: 37 },
+        { strokeStyle: "#FFDD00", min: 37, max: 38 },
+        { strokeStyle: "#F03E3E", min: 38, max: 40 }
+      ]
+    });
+    tempGauge.maxValue = 40; tempGauge.setMinValue(35);
+    tempGauge.set(35);
+
+    const humidityGauge = new Gauge(document.getElementById('humidityGauge')).setOptions({
+      angle: 0, lineWidth: 0.44, radiusScale: 1, pointer: { length: 0.6, strokeWidth: 0.035 },
+      limitMax: true, limitMin: true, colorStart: '#6FADCF', colorStop: '#8FC0DA',
+      strokeColor: '#E0E0E0', generateGradient: true, highDpiSupport: true,
+      staticZones: [
+        { strokeStyle: "#30B32D", min: 30, max: 60 },
+        { strokeStyle: "#FFDD00", min: 60, max: 80 },
+        { strokeStyle: "#F03E3E", min: 80, max: 100 }
+      ]
+    });
+    humidityGauge.maxValue = 100; humidityGauge.setMinValue(30);
+    humidityGauge.set(30);
+
+    // Initialize Chart.js
+    const ctx = document.getElementById('vitalsChart').getContext('2d');
+    const vitalsChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Heart Rate (BPM)',
+            data: [],
+            borderColor: '#0d6efd',
+            fill: false,
+            tension: 0.1
+          },
+          {
+            label: 'Temperature (°C)',
+            data: [],
+            borderColor: '#dc3545',
+            fill: false,
+            tension: 0.1
+          },
+          {
+            label: 'Humidity (%)',
+            data: [],
+            borderColor: '#198754',
+            fill: false,
+            tension: 0.1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { title: { display: true, text: 'Time' } },
+          y: { title: { display: true, text: 'Value' }, suggestedMin: 0 }
+        },
+        plugins: {
+          legend: { position: 'top' }
+        }
+      }
+    });
+
+    let historyData = [];
+    async function fetchVitals() {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/vitals');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Network response was not ok');
+        }
+        const data = await response.json();
+
+        pulseGauge.set(data.pulse);
+        document.getElementById('pulseValue').textContent = `${data.pulse.toFixed(0)} BPM`;
+        tempGauge.set(data.temperature);
+        document.getElementById('tempValue').textContent = `${data.temperature.toFixed(1)} °C`;
+        humidityGauge.set(data.humidity);
+        document.getElementById('humidityValue').textContent = `${data.humidity.toFixed(1)} %`;
+
+        statusAlert.classList.remove('d-none', 'alert-success', 'alert-danger');
+        statusAlert.classList.add(data.status === 'Normal' ? 'alert-success' : 'alert-danger');
+        statusText.textContent = data.status === 'Normal' ? 'All Good!' : 'Alert: Check Vitals!';
+        timestamp.textContent = `Last updated: ${new Date(data.timestamp).toLocaleString()}`;
+
+        errorAlert.classList.add('d-none');
+
+        // Voice alerts for both normal and abnormal
+        let utterance;
+        if (data.status === 'Abnormal') {
+          new Audio('https://freesound.org/data/previews/256/256128_4772965-lq.mp3').play();
+          utterance = new SpeechSynthesisUtterance(
+            `Warning: Abnormal vitals detected! Pulse: ${data.pulse.toFixed(0)} beats per minute, Temperature: ${data.temperature.toFixed(1)} degrees Celsius.`
+          );
+        } else {
+          utterance = new SpeechSynthesisUtterance(`All good! Vitals are normal.`);
+        }
+        utterance.lang = 'en-US';
+        utterance.volume = 1;
+        utterance.rate = 1;
+        window.speechSynthesis.speak(utterance);
+      } catch (error) {
+        console.error('Fetch error:', error);
+        errorMessage.textContent = `Error: ${error.message}`;
+        errorAlert.classList.remove('d-none');
+        statusAlert.classList.add('d-none');
+      }
+    }
+
+    async function fetchHistory() {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/api/vitals/history');
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Network response was not ok');
+        }
+        const data = await response.json();
+
+        historyData = data;
+        const labels = data.map(item => new Date(item.timestamp).toLocaleTimeString());
+        vitalsChart.data.labels = labels;
+        vitalsChart.data.datasets[0].data = data.map(item => item.pulse);
+        vitalsChart.data.datasets[1].data = data.map(item => item.temperature);
+        vitalsChart.data.datasets[2].data = data.map(item => item.humidity);
+        vitalsChart.update();
+
+        errorAlert.classList.add('d-none');
+      } catch (error) {
+        console.error('History fetch error:', error);
+        errorMessage.textContent = `Error: ${error.message}`;
+        errorAlert.classList.remove('d-none');
+      }
+    }
+
+    function exportCSV(data) {
+      if (!data.length) {
+        alert('No data available to export.');
+        return;
+      }
+      const anomalies = data.filter(item => item.status === 'Abnormal').length;
+      const avgPulse = (data.reduce((sum, item) => sum + item.pulse, 0) / data.length).toFixed(1);
+      const avgTemp = (data.reduce((sum, item) => sum + item.temperature, 0) / data.length).toFixed(1);
+      const summary = [
+        `Patient Vitals Report`,
+        `Generated: ${new Date().toLocaleString()}`,
+        `Total Records: ${data.length}`,
+        `Anomalies Detected: ${anomalies}`,
+        `Average Pulse: ${avgPulse} BPM`,
+        `Average Temperature: ${avgTemp} °C`,
+        ``
+      ].join('\n');
+      const csv = [
+        summary,
+        'Timestamp,Pulse (BPM),Temperature (°C),Humidity (%),Status',
+        ...data.map(item => `${item.timestamp},${item.pulse},${item.temperature},${item.humidity},${item.status}`)
+      ].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'patient_vitals_report.csv';
+      a.click();
+    }
+
+    fetchVitals();
+    fetchHistory();
+    setInterval(fetchVitals, 20000);
+    setInterval(fetchHistory, 60000);
+  </script>
+</body>
+</html>
